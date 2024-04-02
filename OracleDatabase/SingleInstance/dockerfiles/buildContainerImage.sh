@@ -12,7 +12,7 @@
 usage() {
   cat << EOF
 
-Usage: buildContainerImage.sh -v [version] -t [image_name:tag] [-e | -s | -x | -f] [-i] [-p] [-b] [-o] [container build option]
+Usage: buildContainerImage.sh -v [version] -t [image_name:tag] [-e | -s | -x | -f] [-i] [-p] [-b] [-a] [-o] [container build option]
 Builds a container image for Oracle Database.
 
 Parameters:
@@ -24,6 +24,7 @@ Parameters:
    -x: creates image based on 'Express Edition'
    -f: creates images based on Database 'Free' 
    -i: ignores the MD5 checksums
+   -a: build for aarch64
    -p: creates and extends image using the patching extension
    -b: build base stage only (Used by extensions)
    -o: passes on container build option
@@ -123,13 +124,14 @@ MIN_DOCKER_VERSION="17.09"
 MIN_PODMAN_VERSION="1.6.0"
 DOCKERFILE="Dockerfile"
 IMAGE_NAME=""
+ARCH="amd64"
 
 if [ "$#" -eq 0 ]; then
   usage;
   exit 1;
 fi
 
-while getopts "hesxfiv:t:o:pb" optname; do
+while getopts "hesxfiav:t:o:pb" optname; do
   case "${optname}" in
     "h")
       usage
@@ -162,6 +164,11 @@ while getopts "hesxfiv:t:o:pb" optname; do
     "t")
       IMAGE_NAME="${OPTARG}"
       ;;
+    "a")
+      ARCH="aarch64"
+      export DOCKER_DEFAULT_PLATFORM=linux/aarch64
+      echo "You might need to do this before running: \`export DOCKER_DEFAULT_PLATFORM=linux/aarch64\`"
+      ;;
     "o")
       eval "BUILD_OPTS=(${OPTARG})"
       ;;
@@ -180,8 +187,9 @@ done
 checkContainerRuntime
 
 # Only 19c EE is supported on ARM64 platform
-if [ "$(arch)" == "aarch64" ] || [ "$(arch)" == "arm64" ]; then
-  BUILD_OPTS=("--build-arg" "BASE_IMAGE=oraclelinux:8" "${BUILD_OPTS[@]}")
+if [ "${ARCH}" == "aarch64" ] || [ "${ARCH}" == "arm64" ]; then
+  BUILD_OPTS=("--build-arg" "BASE_IMAGE=oraclelinux:8" "--build-arg" "ARCH=aarch64" "${BUILD_OPTS[@]}")
+  SKIPMD5=1
   PLATFORM=".arm64"
   if { [ "${VERSION}" == "19.3.0" ] && [ "${ENTERPRISE}" -eq 1 ]; }; then
     BUILD_OPTS=("--build-arg" "INSTALL_FILE_1=LINUX.ARM64_1919000_db_home.zip" "${BUILD_OPTS[@]}")
@@ -189,6 +197,8 @@ if [ "$(arch)" == "aarch64" ] || [ "$(arch)" == "arm64" ]; then
     echo "Currently only 19c enterprise edition is supported on ARM64 platform.";
     exit 1;
   fi;
+else
+  unset DOCKER_DEFAULT_PLATFORM
 fi;
 
 # Which Edition should be used?
@@ -297,7 +307,7 @@ fi
 if [ ${BASE_ONLY} -eq 1 ]; then
   echo "Building base stage image '${IMAGE_NAME}' ..."
   # BUILD THE BASE STAGE IMAGE (replace all environment variables)
-  "${CONTAINER_RUNTIME}" build --force-rm=true \
+  "${CONTAINER_RUNTIME}" buildx build --force-rm=true \
         "${BUILD_OPTS[@]}" "${PROXY_SETTINGS[@]}" --target base \
         -t "${IMAGE_NAME}" -f "${DOCKERFILE}" . || {
     echo ""
@@ -316,7 +326,7 @@ echo "Building image '${IMAGE_NAME}' ..."
 
 # BUILD THE IMAGE (replace all environment variables)
 BUILD_START=$(date '+%s')
-"${CONTAINER_RUNTIME}" build --force-rm=true --no-cache=true \
+"${CONTAINER_RUNTIME}" buildx build --force-rm=true --no-cache=false \
       "${BUILD_OPTS[@]}" "${PROXY_SETTINGS[@]}" --build-arg DB_EDITION="${EDITION}" \
       -t "${IMAGE_NAME}" -f "${DOCKERFILE}" . || {
   echo ""

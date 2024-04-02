@@ -20,7 +20,8 @@
 #
 # Pull base image
 # ---------------
-ARG BASE_IMAGE=oraclelinux:7-slim
+#ARG BASE_IMAGE=oraclelinux:7-slim
+ARG BASE_IMAGE=oraclelinux:8
 # hadolint ignore=DL3006
 FROM ${BASE_IMAGE} as base
 
@@ -74,7 +75,9 @@ ENV ORACLE_BASE=/opt/oracle \
     DG_OBSERVER_NAME="" \
     CHECKPOINT_FILE_EXTN=".created" \
     # Directory for keeping Oracle Wallet
-    WALLET_DIR=""
+    WALLET_DIR="" \
+    # Execute the below command to validate OS version and then export CV_ASSUME_DISTID to the supported version of OEL for 19c
+    CV_ASSUME_DISTID=OEL8
 
 # Use second ENV so that variable get substituted
 ENV PATH=$ORACLE_HOME/bin:$ORACLE_HOME/OPatch/:/usr/sbin:$PATH \
